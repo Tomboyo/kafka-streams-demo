@@ -1,0 +1,4 @@
+# Do not track local development environment configuration since this may contain secrets.
+config/
+target/
+.idea/
