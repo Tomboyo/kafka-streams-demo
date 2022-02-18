@@ -1,7 +1,12 @@
 package com.github.tomboyo.kafkastreamsdemo;
 
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsConfig;
+import org.apache.kafka.streams.Topology;
+import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -9,6 +14,8 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.Properties;
 
+import static com.github.tomboyo.kafkastreamsdemo.PropertySupport.mergeProperties;
+import static com.github.tomboyo.kafkastreamsdemo.PropertySupport.subproperties;
 import static org.apache.kafka.streams.StreamsConfig.producerPrefix;
 
 public class AppConfig {
@@ -20,45 +27,28 @@ public class AppConfig {
     return properties;
   }
 
-  public static Properties kafkaStreamsProperties() {
-    var props = new Properties();
-    // Essentially the consumer group.
-    props.put(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-demo");
-    // Enables EOS, which sets isolation.level=read_committed and enable.idempotence=true
-    props.put(StreamsConfig.PROCESSING_GUARANTEE_CONFIG, StreamsConfig.EXACTLY_ONCE_V2);
-    // Await acks from all replicas when producing messages.
-    props.put(producerPrefix(ProducerConfig.ACKS_CONFIG), "all");
-    return props;
+  public static Admin createAdmin(Properties p) {
+    return Admin.create(kafkaAll(p));
   }
 
-  public static Properties standaloneProducerProperties() {
-    var props = new Properties();
-    props.putAll(
-        Map.of(
-            "key.serializer", "org.apache.kafka.common.serialization.LongSerializer",
-            "value.serializer", "org.apache.kafka.common.serialization.StringSerializer"));
-    return props;
+  public static KafkaProducer<Long, String> createProducer(Properties p) {
+    return new KafkaProducer<>(mergeProperties(kafkaAll(p), Map.of(
+        "key.serializer", "org.apache.kafka.common.serialization.LongSerializer",
+        "value.serializer", "org.apache.kafka.common.serialization.StringSerializer"
+    )));
   }
 
-  public static Properties subproperties(Properties properties, String prefix) {
-    var p = prefix + (prefix.endsWith(".") ? "" : ".");
-    return properties.keySet().stream()
-        .filter(key -> ((String) key).startsWith(p))
-        .collect(
-            Properties::new,
-            (acc, key) ->
-                acc.put(
-                    ((String) key).substring(p.length()), // Key without the prefix
-                    properties.get(key)),
-            Properties::putAll);
+  public static KafkaStreams createKafkaStreams(Topology topology, Properties p) {
+    return new KafkaStreams(
+            topology,
+            mergeProperties(kafkaAll(p), Map.of(
+                StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-demo",
+                StreamsConfig.PROCESSING_GUARANTEE_CONFIG, StreamsConfig.EXACTLY_ONCE_V2,
+                producerPrefix(ProducerConfig.ACKS_CONFIG), "all"
+            )));
   }
 
-  public static Properties mergeProperties(Properties lowPrecedence, Properties... highPrecedence) {
-    var result = new Properties();
-    result.putAll(lowPrecedence);
-    for (var p : highPrecedence) {
-      result.putAll(p);
-    }
-    return result;
+  private static Properties kafkaAll(Properties p) {
+    return subproperties(p, "app.kafka.all");
   }
 }
